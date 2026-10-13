@@ -1,226 +1,120 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <!-- モバイル向けのビューポート設定 -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HEIF to PNG (GPS Coordinator)</title>
-    
-    <!-- Tailwind CSS for styling -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- HEIC変換ライブラリ (heic2any) -->
-    <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
-    <!-- Exif/GPS解析ライブラリ (exifr) -->
-    <script src="https://cdn.jsdelivr.net/npm/exifr/dist/full.umd.js"></script>
-    
-    <!-- 外部フォント (Inter) -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    
-    <style>
-        body { font-family: 'Inter', sans-serif; }
-        /* スクロールバーの非表示（モバイル向けにスッキリさせる） */
-        ::-webkit-scrollbar { width: 0px; background: transparent; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HEIC to PNG (GPS)</title>
+  <!-- HEIC変換とExif解析ライブラリ -->
+  <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/exifr/dist/full.umd.js"></script>
+  <!-- 📦 ZIP生成ライブラリを追加 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <style>
+    body { font-family: -apple-system, sans-serif; padding: 20px; line-height: 1.6; max-width: 600px; margin: auto; }
+    .card { border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin-top: 10px; }
+    .btn { display: inline-block; padding: 14px 24px; background: #007aff; color: #fff; text-decoration: none; border-radius: 8px; font-weight: bold; text-align: center; box-sizing: border-box; width: 100%; margin: 15px 0; }
+    .btn-success { background: #28a745; font-size: 1.1em; }
+    #status { margin-top: 15px; font-weight: bold; color: #333; }
+    .log-item { font-size: 0.9em; color: #555; padding: 4px 0; border-bottom: 1px dashed #eee; }
+  </style>
 </head>
-<body class="bg-slate-50 min-h-screen text-slate-800 pb-20">
+<body>
+  <h2>HEIF → PNG (GPS付き)</h2>
+  <p>100枚でもドントコイ！変換後にまとめてZIPで保存できるぜ！</p>
+  
+  <input type="file" id="fileInput" accept="image/heic,image/heif" multiple style="font-size: 16px; padding: 10px 0;">
+  
+  <div id="status"></div>
+  
+  <!-- ここにドカンとZIPダウンロードボタンが出現する -->
+  <div id="zipArea"></div>
+  
+  <div class="card" style="margin-top: 20px;">
+    <strong>処理ログ</strong>
+    <div id="output" style="margin-top: 10px;"></div>
+  </div>
 
-    <div class="max-w-2xl mx-auto px-4 pt-8 sm:px-6 sm:pt-12">
-        <header class="text-center mb-8">
-            <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-100 text-blue-600 mb-4">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.243-4.243a8 8 0 1111.314 0z" />
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-            </div>
-            <h1 class="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight mb-2">HEIF → PNG 変換</h1>
-            <p class="text-sm sm:text-base text-slate-500">
-                ブラウザ内で完結！通信せずに安全に画像を変換し、GPS座標をファイル名に自動付与します。
-            </p>
-        </header>
+  <script>
+    const fileInput = document.getElementById('fileInput');
+    const statusDiv = document.getElementById('status');
+    const outputDiv = document.getElementById('output');
+    const zipArea = document.getElementById('zipArea');
 
-        <main>
-            <div class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden mb-6 transition-all hover:shadow-md">
-                <label for="fileInput" class="block cursor-pointer relative p-8 sm:p-12 text-center group">
-                    <div class="absolute inset-0 bg-blue-50 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                    <div class="relative z-10 flex flex-col items-center">
-                        <svg class="w-12 h-12 text-blue-500 mb-4 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
-                        </svg>
-                        <span class="text-lg font-semibold text-slate-800 mb-1">ここをタップして写真を選択</span>
-                        <span class="text-sm text-slate-500">複数ファイルの選択に対応しています</span>
-                    </div>
-                    <!-- 入力ファイル形式をHEIF/HEICに限定 -->
-                    <input type="file" id="fileInput" accept=".heic, .heif, image/heic, image/heif" multiple class="hidden">
-                </label>
-            </div>
+    fileInput.addEventListener('change', async (e) => {
+      const files = Array.from(e.target.files);
+      if (!files.length) return;
 
-            <div id="statusContainer" class="hidden mb-8 bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
-                <div class="flex justify-between items-end mb-3">
-                    <div>
-                        <p id="statusTitle" class="text-sm font-semibold text-slate-800">処理中...</p>
-                        <p id="statusDetail" class="text-xs text-slate-500 truncate max-w-[200px] sm:max-w-xs mt-0.5">準備中</p>
-                    </div>
-                    <span id="progressCount" class="text-sm font-medium text-blue-600 bg-blue-50 px-2.5 py-1 rounded-md">0 / 0</span>
-                </div>
-                <div class="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                    <div id="progressBar" class="bg-blue-500 h-2 rounded-full transition-all duration-300 ease-out" style="width: 0%"></div>
-                </div>
-            </div>
+      // 表示の初期化
+      outputDiv.innerHTML = '';
+      zipArea.innerHTML = '';
+      statusDiv.innerText = `${files.length}件の処理を開始...`;
+      
+      // 📦 ZIPオブジェクトの作成
+      const zip = new JSZip();
+      let successCount = 0;
 
-            <div id="resultList" class="space-y-4">
-                <!-- Javascriptでカードが動的に追加されます -->
-            </div>
-        </main>
-    </div>
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        statusDiv.innerText = `処理中 (${i + 1}/${files.length}): ${file.name}`;
 
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const fileInput = document.getElementById('fileInput');
-            const statusContainer = document.getElementById('statusContainer');
-            const statusTitle = document.getElementById('statusTitle');
-            const statusDetail = document.getElementById('statusDetail');
-            const progressBar = document.getElementById('progressBar');
-            const progressCount = document.getElementById('progressCount');
-            const resultList = document.getElementById('resultList');
+        try {
+          // 1. ExifからGPS座標を抽出
+          let coordStr = "_no_gps";
+          const exifData = await exifr.gps(file);
+          if (exifData && exifData.latitude && exifData.longitude) {
+            coordStr = `_${exifData.latitude.toFixed(6)},${exifData.longitude.toFixed(6)}`;
+          }
 
-            fileInput.addEventListener('change', async (e) => {
-                const files = Array.from(e.target.files);
-                if (files.length === 0) return;
+          // 2. HEICをPNG Blobへ変換
+          const pngBlob = await heic2any({ blob: file, toType: "image/png" });
+          const blobToUse = Array.isArray(pngBlob) ? pngBlob[0] : pngBlob;
 
-                // UIの初期化
-                statusContainer.classList.remove('hidden');
-                resultList.innerHTML = '';
-                fileInput.disabled = true; // 処理中は追加入力を防ぐ
-                
-                let completedCount = 0;
-                updateProgress(0, files.length, '処理を開始します...');
+          // 3. ファイル名生成
+          const baseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+          const outName = `${baseName}${coordStr}.png`;
+          
+          // 📦 変換した画像をZIP内に放り込む
+          zip.file(outName, blobToUse);
+          successCount++;
 
-                // ブラウザがフリーズしないように1つずつ順次処理(for...of)
-                for (let i = 0; i < files.length; i++) {
-                    const file = files[i];
-                    updateProgress(i, files.length, file.name);
+          // ログに追記
+          const logItem = document.createElement('div');
+          logItem.className = 'log-item';
+          logItem.innerHTML = `✅ 変換OK: ${outName}`;
+          outputDiv.appendChild(logItem);
 
-                    try {
-                        // 1. ExifからGPS座標を抽出 (exifrを使用)
-                        let coordStr = "_no_gps";
-                        let hasGps = false;
-                        
-                        try {
-                            const gpsData = await exifr.gps(file);
-                            if (gpsData && gpsData.latitude != null && gpsData.longitude != null) {
-                                // 座標を小数点以下6桁でフォーマット
-                                const lat = gpsData.latitude.toFixed(6);
-                                const lon = gpsData.longitude.toFixed(6);
-                                coordStr = `_${lat},${lon}`;
-                                hasGps = true;
-                            }
-                        } catch (gpsErr) {
-                            console.warn("GPS読み込みエラー:", gpsErr);
-                        }
-
-                        // 2. HEICをPNGに変換 (heic2anyを使用)
-                        // ※ HEICは複数枚の画像を保持できるため配列で返る場合がある
-                        const conversionResult = await heic2any({ 
-                            blob: file, 
-                            toType: "image/png" 
-                        });
-                        
-                        const pngBlob = Array.isArray(conversionResult) ? conversionResult[0] : conversionResult;
-                        const objectUrl = URL.createObjectURL(pngBlob);
-
-                        // 3. ファイル名の生成
-                        // 拡張子を除いた元のファイル名を取得
-                        const originalNameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
-                        const newFileName = `${originalNameWithoutExt}${coordStr}.png`;
-
-                        // 4. 結果をUI(カード形式)に追加
-                        createResultCard(newFileName, objectUrl, hasGps, file.name);
-
-                    } catch (error) {
-                        console.error(`ファイル ${file.name} の処理中にエラーが発生しました:`, error);
-                        createErrorCard(file.name, error.message);
-                    }
-
-                    completedCount++;
-                    updateProgress(completedCount, files.length, '完了');
-                }
-
-                // すべて完了した時のUI更新
-                statusTitle.innerText = "すべての変換が完了しました！";
-                statusDetail.innerText = "リストからダウンロードしてください。";
-                progressBar.classList.remove('bg-blue-500');
-                progressBar.classList.add('bg-green-500');
-                fileInput.disabled = false;
-                
-                // 次のアップロードのためにinputをリセット
-                fileInput.value = '';
-            });
-
-            // プログレスバーのUI更新用ヘルパー関数
-            function updateProgress(current, total, currentFileName) {
-                const percentage = Math.round((current / total) * 100);
-                progressBar.style.width = `${percentage}%`;
-                progressCount.innerText = `${current} / ${total}`;
-                if (currentFileName) {
-                    statusDetail.innerText = currentFileName;
-                }
-            }
-
-            function createResultCard(fileName, downloadUrl, hasGps, originalName) {
-                const card = document.createElement('div');
-                card.className = "bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-fade-in";
-                
-                const gpsBadge = hasGps 
-                    ? `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 border border-green-200"><svg class="mr-1 h-3 w-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd" /></svg>座標あり</span>` 
-                    : `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200"><svg class="mr-1 h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" /></svg>座標なし</span>`;
-
-                card.innerHTML = `
-                    <div class="flex-1 min-w-0">
-                        <div class="flex items-center gap-2 mb-1">
-                            <h3 class="text-sm font-semibold text-slate-800 truncate" title="${fileName}">${fileName}</h3>
-                        </div>
-                        <div class="flex items-center gap-2 mt-2">
-                            ${gpsBadge}
-                            <span class="text-xs text-slate-400 truncate">元: ${originalName}</span>
-                        </div>
-                    </div>
-                    <a href="${downloadUrl}" download="${fileName}" class="inline-flex items-center justify-center px-4 py-2.5 border border-transparent text-sm font-medium rounded-xl shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors w-full sm:w-auto active:scale-95">
-                        <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                        保存する
-                    </a>
-                `;
-                
-                // 最新のものが上に来るように追加
-                resultList.insertBefore(card, resultList.firstChild);
-            }
-
-            function createErrorCard(fileName, errorMessage) {
-                const card = document.createElement('div');
-                card.className = "bg-red-50 p-4 sm:p-5 rounded-2xl border border-red-100 flex flex-col gap-1";
-                card.innerHTML = `
-                    <div class="flex items-center text-red-800">
-                        <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <span class="text-sm font-bold truncate">${fileName} の変換に失敗しました</span>
-                    </div>
-                    <p class="text-xs text-red-600 ml-7">${errorMessage || "対応していないフォーマット、またはファイルが破損している可能性があります。"}</p>
-                `;
-                resultList.insertBefore(card, resultList.firstChild);
-            }
-        });
-    </script>
-    
-    <!-- アニメーション用のカスタムスタイル -->
-    <style>
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
+        } catch (err) {
+          console.error(err);
+          const errItem = document.createElement('div');
+          errItem.className = 'log-item';
+          errItem.innerHTML = `❌ エラー: ${file.name}`;
+          errItem.style.color = "red";
+          outputDiv.appendChild(errItem);
         }
-        .animate-fade-in {
-            animation: fadeIn 0.4s ease-out forwards;
+      }
+      
+      // すべての処理が終わったらZIPを生成してボタンを出す
+      if (successCount > 0) {
+        statusDiv.innerText = "変換完了！ZIPファイルを生成中...";
+        
+        try {
+          const zipBlob = await zip.generateAsync({ type: "blob" });
+          const zipUrl = URL.createObjectURL(zipBlob);
+          
+          // ドデカいダウンロードボタンを表示
+          zipArea.innerHTML = `
+            <a class="btn btn-success" href="${zipUrl}" download="converted_images.zip">
+              📦 ${successCount}枚をまとめてZIPで保存！
+            </a>
+          `;
+          statusDiv.innerText = "すべての処理が完了したぜ！下の緑のボタンから保存してくれ！";
+        } catch (err) {
+          statusDiv.innerText = "ZIP生成中にエラーが発生しました。";
         }
-    </style>
+      } else {
+        statusDiv.innerText = "変換に成功したファイルがありませんでした。";
+      }
+    });
+  </script>
 </body>
 </html>
