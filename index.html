@@ -3,52 +3,78 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>HEIC to PNG (GPS & Excel)</title>
+  <title>HEIC to PNG (スプレッド認証 & 写真台帳)</title>
   
-  <!-- 各種ライブラリ -->
   <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/exifr/dist/full.umd.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <!-- 📊 エクセル出力用ライブラリ -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   
   <style>
     body { font-family: -apple-system, sans-serif; padding: 15px; line-height: 1.6; max-width: 600px; margin: auto; background: #f9f9f9; }
     h2 { font-size: 1.2rem; margin-top: 0; }
-    .card { background: #fff; border: 1px solid #ddd; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+    .card { background: #fff; border: 1px solid #ddd; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 15px; }
     .btn { display: inline-block; padding: 14px 16px; color: #fff; text-decoration: none; border-radius: 8px; font-weight: bold; text-align: center; border: none; cursor: pointer; font-size: 1rem; width: 100%; box-sizing: border-box; }
     .btn-primary { background: #007aff; }
     .btn-success { background: #28a745; margin-top: 15px; }
     .btn-nav { background: #6c757d; width: 48%; }
+    .btn-logout { background: #e9ecef; color: #333; padding: 6px 12px; font-size: 0.8rem; width: auto; border-radius: 6px; }
     .btn:disabled { background: #ccc; cursor: not-allowed; }
     
-    input[type="text"] { width: 100%; padding: 12px; font-size: 16px; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; margin: 15px 0; }
+    label { display: block; font-weight: bold; font-size: 0.9rem; margin-top: 12px; color: #333; }
+    input[type="text"], input[type="tel"] { width: 100%; padding: 12px; font-size: 16px; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; margin: 6px 0 12px 0; }
     
-    #previewImg { width: 100%; max-height: 45vh; object-fit: contain; background: #eee; border-radius: 8px; }
+    #loginError { color: #dc3545; background: #f8d7da; border: 1px solid #f5c2c7; padding: 10px; border-radius: 8px; font-size: 0.9rem; margin-bottom: 12px; display: none; font-weight: bold; }
+    #userBar { display: none; justify-content: space-between; align-items: center; background: #e7f1ff; border: 1px solid #b6d4fe; border-radius: 10px; padding: 10px 14px; margin-bottom: 15px; font-size: 0.85rem; color: #084298; }
+    
+    #previewImg { width: 100%; max-height: 45vh; object-fit: contain; background: #eee; border-radius: 8px; margin-bottom: 10px; }
     .nav-buttons { display: flex; justify-content: space-between; margin-top: 15px; }
+    .exif-info { background: #f1f3f5; padding: 10px; border-radius: 8px; font-size: 0.85rem; color: #495057; white-space: pre-wrap; font-family: monospace; }
     
-    /* ローディング画面 */
-    #loadingOverlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.9); display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 999; }
+    #loadingOverlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.92); display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 999; }
     .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #007aff; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin-bottom: 15px; }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
 
-  <!-- ローディングオーバーレイ -->
   <div id="loadingOverlay">
     <div class="spinner"></div>
-    <div id="loadingText" style="font-weight: bold; color: #333;">画像を読み込み中...</div>
+    <div id="loadingText" style="font-weight: bold; color: #333;">読み込み中...</div>
+  </div>
+
+  <!-- ステップ0：スプレッドシート認証ログイン画面 -->
+  <div id="loginArea" class="card" style="display: none;">
+    <h2>🔐 担当者認証ログイン</h2>
+    <p style="font-size: 0.9rem; color: #555;">管理シートに登録済みのIDと電話番号を入力してください。</p>
+    <div id="loginError"></div>
+
+    <label for="loginIdInput">ID</label>
+    <input type="text" id="loginIdInput" placeholder="登録されているIDを入力">
+    
+    <label for="loginTelInput">電話番号 (tel)</label>
+    <input type="tel" id="loginTelInput" placeholder="登録されている電話番号を入力">
+    
+    <button id="btnLogin" class="btn btn-primary" style="margin-top: 10px;">認証してログイン</button>
+  </div>
+
+  <!-- ログイン中ステータスバー -->
+  <div id="userBar">
+    <div>
+      ✅ 認証済: <strong id="displayUserId"></strong><br>
+      📞 <span id="displayUserTel"></span>
+    </div>
+    <button id="btnLogout" class="btn btn-logout">ログアウト</button>
   </div>
 
   <!-- ステップ1：ファイル選択エリア -->
-  <div id="setupArea" class="card">
-    <h2>📸 HEIF → PNG 変換 (登録名＋エクセル出力)</h2>
-    <p>複数枚を選択して、1枚ずつプレビューしながら名前を登録できるぜ！</p>
+  <div id="setupArea" class="card" style="display: none;">
+    <h2>📸 HEIF → PNG 変換<br>(Exif全摘出＋エクセル台帳)</h2>
+    <p>写真を選択してプレビュー確認＆台帳を一括生成するぜ！</p>
     <input type="file" id="fileInput" accept="image/heic,image/heif" multiple style="font-size: 16px; padding: 10px 0; width: 100%;">
   </div>
 
-  <!-- ステップ2：プレビュー＆名前登録エリア (初期非表示) -->
+  <!-- ステップ2：プレビュー＆名前登録エリア -->
   <div id="reviewArea" class="card" style="display: none;">
     <div style="display: flex; justify-content: space-between; font-weight: bold; margin-bottom: 10px;">
       <span>画像プレビュー</span>
@@ -56,37 +82,58 @@
     </div>
     
     <img id="previewImg" src="" alt="プレビュー画像">
-    
-    <input type="text" id="customNameInput" placeholder="この写真の登録名を入力 (例: 現場A)">
+    <div class="exif-info" id="exifDisplay">ここにExifデータが表示されます</div>
+    <input type="text" id="customNameInput" placeholder="この写真の登録名を入力 (例: 現場A_着工前)">
     
     <div class="nav-buttons">
-      <button id="btnPrev" class="btn btn-nav">◀ 前の画像</button>
-      <button id="btnNext" class="btn btn-nav">次の画像 ▶</button>
+      <button id="btnPrev" class="btn btn-nav">◀ 前へ</button>
+      <button id="btnNext" class="btn btn-nav">次へ ▶</button>
     </div>
     
     <hr style="margin: 20px 0; border: 0; border-top: 1px dashed #ccc;">
-    
-    <button id="btnZip" class="btn btn-primary">📦 全て確認完了＆ZIP・エクセル生成</button>
+    <button id="btnZip" class="btn btn-primary">📦 全て確認完了＆ZIP・台帳生成</button>
   </div>
 
-  <!-- ステップ3：完了画面 (初期非表示) -->
+  <!-- ステップ3：完了画面 -->
   <div id="completeArea" class="card" style="display: none; text-align: center;">
-    <h2>🎉 変換完了！</h2>
-    <p>ZIPファイルの中に、変換された画像と<b>「登録リスト.xlsx」</b>が入っているぜ！</p>
+    <h2>🎉 変換＆台帳作成 完了！</h2>
+    <p>ZIPファイルの中に、変換された画像と<b>「写真台帳.xlsx」</b>が入っているぜ！</p>
     <div id="downloadLinkArea"></div>
     <button class="btn btn-nav" style="margin-top: 20px; width: 100%;" onclick="location.reload()">最初からやり直す</button>
   </div>
 
   <script>
+    // =========================================================
+    // ★ ここにGASで発行したウェブアプリのURLを貼り付ける！ ★
+    // =========================================================
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxu-6XKuab9__53h5Wdvf7PnuqS8joGeJscQo3KMJSoJ8DaTRk3JELwt6oi_CdPWtjoWg/exec";
+    // =========================================================
+
+    const STORAGE_KEY_ID = 'heic_app_user_id';
+    const STORAGE_KEY_TEL = 'heic_app_user_tel';
+
+    let currentUserId = '';
+    let currentUserTel = '';
     let files = [];
     let fileData = [];
     let currentIndex = 0;
 
-    // UI要素の取得
+    const loginArea = document.getElementById('loginArea');
+    const loginError = document.getElementById('loginError');
+    const loginIdInput = document.getElementById('loginIdInput');
+    const loginTelInput = document.getElementById('loginTelInput');
+    const btnLogin = document.getElementById('btnLogin');
+    const userBar = document.getElementById('userBar');
+    const displayUserId = document.getElementById('displayUserId');
+    const displayUserTel = document.getElementById('displayUserTel');
+    const btnLogout = document.getElementById('btnLogout');
+
     const fileInput = document.getElementById('fileInput');
     const setupArea = document.getElementById('setupArea');
     const reviewArea = document.getElementById('reviewArea');
+    const completeArea = document.getElementById('completeArea');
     const previewImg = document.getElementById('previewImg');
+    const exifDisplay = document.getElementById('exifDisplay');
     const customNameInput = document.getElementById('customNameInput');
     const counterText = document.getElementById('counterText');
     const btnPrev = document.getElementById('btnPrev');
@@ -95,62 +142,179 @@
     const loadingOverlay = document.getElementById('loadingOverlay');
     const loadingText = document.getElementById('loadingText');
 
-    // 1. ファイル選択時
+    async function authenticateWithSheet(id, tel) {
+      if (!GAS_API_URL || GAS_API_URL.includes("あなたのGASのURL")) {
+        return { status: "ng", message: "コード内の GAS_API_URL が設定されていません。" };
+      }
+      const url = `${GAS_API_URL}?id=${encodeURIComponent(id)}&tel=${encodeURIComponent(tel)}`;
+      try {
+        const res = await fetch(url);
+        return await res.json();
+      } catch (err) {
+        console.error(err);
+        return { status: "ng", message: "認証サーバーとの通信に失敗しました。GASの公開設定（全員）を確認してください。" };
+      }
+    }
+
+    function showLoginError(msg) {
+      loginError.innerText = "⚠️ " + msg;
+      loginError.style.display = "block";
+    }
+
+    function hideLoginError() {
+      loginError.style.display = "none";
+    }
+
+    async function checkAutoLogin() {
+      const savedId = localStorage.getItem(STORAGE_KEY_ID);
+      const savedTel = localStorage.getItem(STORAGE_KEY_TEL);
+
+      if (savedId && savedTel) {
+        loadingText.innerText = "スプレッドシートで認証ステータスを確認中...";
+        loadingOverlay.style.display = "flex";
+
+        const result = await authenticateWithSheet(savedId, savedTel);
+        loadingOverlay.style.display = "none";
+
+        if (result.status === "ok") {
+          currentUserId = savedId;
+          currentUserTel = savedTel;
+          enterApp();
+        } else {
+          localStorage.removeItem(STORAGE_KEY_ID);
+          localStorage.removeItem(STORAGE_KEY_TEL);
+          loginIdInput.value = savedId;
+          loginTelInput.value = savedTel;
+          loginArea.style.display = 'block';
+          showLoginError(result.message);
+        }
+      } else {
+        loginArea.style.display = 'block';
+      }
+    }
+
+    function enterApp() {
+      hideLoginError();
+      displayUserId.innerText = currentUserId;
+      displayUserTel.innerText = currentUserTel;
+      loginArea.style.display = 'none';
+      userBar.style.display = 'flex';
+      setupArea.style.display = 'block';
+    }
+
+    btnLogin.addEventListener('click', async () => {
+      const idVal = loginIdInput.value.trim();
+      const telVal = loginTelInput.value.trim();
+
+      if (!idVal || !telVal) {
+        showLoginError("IDと電話番号の両方を入力してください。");
+        return;
+      }
+
+      hideLoginError();
+      loadingText.innerText = "スプレッドシートと照合中...";
+      loadingOverlay.style.display = "flex";
+
+      const result = await authenticateWithSheet(idVal, telVal);
+      loadingOverlay.style.display = "none";
+
+      if (result.status === "ok") {
+        localStorage.setItem(STORAGE_KEY_ID, idVal);
+        localStorage.setItem(STORAGE_KEY_TEL, telVal);
+        currentUserId = idVal;
+        currentUserTel = telVal;
+        enterApp();
+      } else {
+        showLoginError(result.message);
+      }
+    });
+
+    btnLogout.addEventListener('click', () => {
+      loginIdInput.value = currentUserId;
+      loginTelInput.value = currentUserTel;
+      localStorage.removeItem(STORAGE_KEY_ID);
+      localStorage.removeItem(STORAGE_KEY_TEL);
+      currentUserId = '';
+      currentUserTel = '';
+      userBar.style.display = 'none';
+      setupArea.style.display = 'none';
+      reviewArea.style.display = 'none';
+      completeArea.style.display = 'none';
+      hideLoginError();
+      loginArea.style.display = 'block';
+    });
+
+    checkAutoLogin();
+
+    function formatDate(dateObj) {
+      if (!dateObj) return "不明";
+      const d = new Date(dateObj);
+      if (isNaN(d.getTime())) return "不明";
+      return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
+    }
+
     fileInput.addEventListener('change', async (e) => {
       files = Array.from(e.target.files);
       if (!files.length) return;
       
-      // データの状態を管理する配列を初期化
       fileData = files.map(f => ({
         originalFile: f,
         originalName: f.name,
-        customName: '',     // ユーザーが入力する登録名
-        lat: null,          // 緯度
-        lon: null,          // 経度
-        pngBlob: null,      // 変換後のPNGデータ
-        objectUrl: null,    // プレビュー用URL
-        gpsExtracted: false // GPS抽出フラグ
+        customName: '',
+        pngBlob: null,
+        objectUrl: null,
+        exifParsed: false,
+        lat: null,
+        lon: null,
+        timestamp: "不明",
+        make: "不明",
+        model: "不明",
+        width: "不明",
+        height: "不明",
       }));
 
       setupArea.style.display = 'none';
       reviewArea.style.display = 'block';
       currentIndex = 0;
-      
       await loadAndDisplayCurrent();
     });
 
-    // 2. 現在のインデックスの画像を読み込んで表示
     async function loadAndDisplayCurrent() {
       const data = fileData[currentIndex];
-      
       loadingText.innerText = `画像 ${currentIndex + 1}枚目を準備中...`;
       loadingOverlay.style.display = 'flex';
-      
-      // ブラウザに描画の隙間を与えるため少し待つ
       await new Promise(resolve => setTimeout(resolve, 50));
       
       try {
-        // GPS座標の抽出 (初回のみ)
-        if (!data.gpsExtracted) {
-          const exifData = await exifr.gps(data.originalFile);
-          if (exifData && exifData.latitude && exifData.longitude) {
-            data.lat = exifData.latitude;
-            data.lon = exifData.longitude;
+        if (!data.exifParsed) {
+          const parsed = await exifr.parse(data.originalFile);
+          if (parsed) {
+            data.lat = parsed.latitude !== undefined ? parsed.latitude : null;
+            data.lon = parsed.longitude !== undefined ? parsed.longitude : null;
+            data.timestamp = formatDate(parsed.DateTimeOriginal || parsed.CreateDate || parsed.ModifyDate);
+            data.make = parsed.Make || "不明";
+            data.model = parsed.Model || "不明";
+            data.width = parsed.ExifImageWidth || parsed.ImageWidth || "不明";
+            data.height = parsed.ExifImageHeight || parsed.ImageHeight || "不明";
           }
-          data.gpsExtracted = true;
+          data.exifParsed = true;
         }
 
-        // PNGへの変換 (初回のみ・プレビュー表示のため)
         if (!data.pngBlob) {
           const pngBlob = await heic2any({ blob: data.originalFile, toType: "image/png" });
           data.pngBlob = Array.isArray(pngBlob) ? pngBlob[0] : pngBlob;
           data.objectUrl = URL.createObjectURL(data.pngBlob);
         }
 
-        // UIの更新
         previewImg.src = data.objectUrl;
         customNameInput.value = data.customName;
         counterText.innerText = `${currentIndex + 1} / ${files.length}`;
+        
+        exifDisplay.innerText = 
+          `撮影日時: ${data.timestamp}\n` +
+          `カメラ : ${data.make} ${data.model}\n` +
+          `サイズ : ${data.width} x ${data.height}\n` +
+          `座標(緯度, 経度): ${data.lat !== null ? data.lat.toFixed(5) + ', ' + data.lon.toFixed(5) : 'なし'}`;
         
         btnPrev.disabled = currentIndex === 0;
         btnNext.disabled = currentIndex === files.length - 1;
@@ -163,76 +327,62 @@
       }
     }
 
-    // 入力された名前をリアルタイムで保存
     customNameInput.addEventListener('input', (e) => {
       fileData[currentIndex].customName = e.target.value;
     });
 
-    // 前へボタン
     btnPrev.addEventListener('click', async () => {
-      if (currentIndex > 0) {
-        currentIndex--;
-        await loadAndDisplayCurrent();
-      }
+      if (currentIndex > 0) { currentIndex--; await loadAndDisplayCurrent(); }
     });
 
-    // 次へボタン
     btnNext.addEventListener('click', async () => {
-      if (currentIndex < files.length - 1) {
-        currentIndex++;
-        await loadAndDisplayCurrent();
-      }
+      if (currentIndex < files.length - 1) { currentIndex++; await loadAndDisplayCurrent(); }
     });
 
-    // 3. 全て確認完了・ZIPとエクセルを生成
     btnZip.addEventListener('click', async () => {
       reviewArea.style.display = 'none';
       loadingOverlay.style.display = 'flex';
       
       const zip = new JSZip();
-      
-      // エクセル用の二次元配列（1行目はヘッダー）
       const excelRows = [
-        ["元ファイル名", "登録名", "緯度", "経度", "出力ファイル名"]
+        ["担当者ID", "電話番号", "登録名", "出力ファイル名", "撮影日時", "緯度", "経度", "メーカー", "機種モデル", "解像度", "元ファイル名"]
       ];
 
       let successCount = 0;
 
       for (let i = 0; i < fileData.length; i++) {
         const data = fileData[i];
-        loadingText.innerText = `ZIPとエクセルを作成中 (${i + 1}/${files.length})...`;
-        
-        // ブラウザ描画用
+        loadingText.innerText = `ZIPと台帳を作成中 (${i + 1}/${files.length})...`;
         await new Promise(resolve => setTimeout(resolve, 10));
 
         try {
-          // 「次へ」を押さずにスキップされた未処理ファイルがあればここで一括変換
-          if (!data.gpsExtracted) {
-            const exifData = await exifr.gps(data.originalFile);
-            if (exifData && exifData.latitude && exifData.longitude) {
-              data.lat = exifData.latitude;
-              data.lon = exifData.longitude;
+          if (!data.exifParsed) {
+            const parsed = await exifr.parse(data.originalFile);
+            if (parsed) {
+              data.lat = parsed.latitude !== undefined ? parsed.latitude : null;
+              data.lon = parsed.longitude !== undefined ? parsed.longitude : null;
+              data.timestamp = formatDate(parsed.DateTimeOriginal || parsed.CreateDate);
+              data.make = parsed.Make || "不明";
+              data.model = parsed.Model || "不明";
+              data.width = parsed.ExifImageWidth || "不明";
+              data.height = parsed.ExifImageHeight || "不明";
             }
-            data.gpsExtracted = true;
+            data.exifParsed = true;
           }
           if (!data.pngBlob) {
             const pngBlob = await heic2any({ blob: data.originalFile, toType: "image/png" });
             data.pngBlob = Array.isArray(pngBlob) ? pngBlob[0] : pngBlob;
           }
 
-          // ファイル名の組み立て
           let coordStr = "_no_gps";
           if (data.lat !== null && data.lon !== null) {
             coordStr = `_${data.lat.toFixed(6)},${data.lon.toFixed(6)}`;
           }
           
           const baseOriginal = data.originalName.substring(0, data.originalName.lastIndexOf('.')) || data.originalName;
-          // 登録名が空なら元のファイル名を使う
           const safeCustomName = data.customName.trim() ? data.customName.trim() : baseOriginal;
-          
           let outName = `${safeCustomName}${coordStr}.png`;
           
-          // ZIP内で同名ファイルが被った場合の回避処理
           let counter = 1;
           let finalOutName = outName;
           while (zip.file(finalOutName)) {
@@ -240,50 +390,50 @@
             counter++;
           }
 
-          // ZIPに画像を詰める
           zip.file(finalOutName, data.pngBlob);
           
-          // エクセルの行に追加
           excelRows.push([
-            data.originalName,
-            data.customName.trim(),
-            data.lat !== null ? data.lat : "N/A",
-            data.lon !== null ? data.lon : "N/A",
-            finalOutName
+            currentUserId,
+            currentUserTel,
+            data.customName.trim() || baseOriginal,
+            finalOutName,
+            data.timestamp,
+            data.lat !== null ? data.lat : "",
+            data.lon !== null ? data.lon : "",
+            data.make,
+            data.model,
+            `${data.width} x ${data.height}`,
+            data.originalName
           ]);
 
           successCount++;
         } catch (err) {
-          console.error(`Error processing ${data.originalName}`, err);
+          console.error(err);
         }
       }
 
-      // 4. エクセル (xlsx) の生成
-      loadingText.innerText = "エクセルファイルを生成中...";
+      loadingText.innerText = "台帳エクセルを生成中...";
       const ws = XLSX.utils.aoa_to_sheet(excelRows);
-      
-      // カラムの幅を自動調整
-      ws['!cols'] = [{wch: 15}, {wch: 15}, {wch: 12}, {wch: 12}, {wch: 35}];
+      ws['!cols'] = [
+        {wch: 15}, {wch: 16}, {wch: 20}, {wch: 35}, {wch: 20},
+        {wch: 12}, {wch: 12}, {wch: 10}, {wch: 15}, {wch: 12}, {wch: 15}
+      ];
       
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "変換リスト");
-      
-      // Blob(バイナリデータ)として書き出し
+      XLSX.utils.book_append_sheet(wb, ws, "写真台帳");
       const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-      zip.file("画像リスト.xlsx", excelBuffer); // ZIPにエクセルを追加
+      zip.file("写真台帳.xlsx", excelBuffer);
 
-      // 5. ZIPの生成とダウンロード
       loadingText.innerText = "ZIPをまとめています...";
       const zipBlob = await zip.generateAsync({ type: "blob" });
       const zipUrl = URL.createObjectURL(zipBlob);
 
       loadingOverlay.style.display = 'none';
-      const completeArea = document.getElementById('completeArea');
       completeArea.style.display = 'block';
       
       document.getElementById('downloadLinkArea').innerHTML = `
-        <a class="btn btn-success" href="${zipUrl}" download="converted_images.zip">
-          📦 ZIPファイル (${successCount}枚 + エクセル) を保存
+        <a class="btn btn-success" href="${zipUrl}" download="写真台帳_${currentUserId}.zip">
+          📦 ZIPファイル (${successCount}枚 + 台帳) を保存
         </a>
       `;
     });
