@@ -3,117 +3,289 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>HEIC to PNG (GPS)</title>
-  <!-- HEIC変換とExif解析ライブラリ -->
+  <title>HEIC to PNG (GPS & Excel)</title>
+  
+  <!-- 各種ライブラリ -->
   <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/exifr/dist/full.umd.js"></script>
-  <!-- 📦 ZIP生成ライブラリを追加 -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <!-- 📊 エクセル出力用ライブラリ -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  
   <style>
-    body { font-family: -apple-system, sans-serif; padding: 20px; line-height: 1.6; max-width: 600px; margin: auto; }
-    .card { border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin-top: 10px; }
-    .btn { display: inline-block; padding: 14px 24px; background: #007aff; color: #fff; text-decoration: none; border-radius: 8px; font-weight: bold; text-align: center; box-sizing: border-box; width: 100%; margin: 15px 0; }
-    .btn-success { background: #28a745; font-size: 1.1em; }
-    #status { margin-top: 15px; font-weight: bold; color: #333; }
-    .log-item { font-size: 0.9em; color: #555; padding: 4px 0; border-bottom: 1px dashed #eee; }
+    body { font-family: -apple-system, sans-serif; padding: 15px; line-height: 1.6; max-width: 600px; margin: auto; background: #f9f9f9; }
+    h2 { font-size: 1.2rem; margin-top: 0; }
+    .card { background: #fff; border: 1px solid #ddd; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+    .btn { display: inline-block; padding: 14px 16px; color: #fff; text-decoration: none; border-radius: 8px; font-weight: bold; text-align: center; border: none; cursor: pointer; font-size: 1rem; width: 100%; box-sizing: border-box; }
+    .btn-primary { background: #007aff; }
+    .btn-success { background: #28a745; margin-top: 15px; }
+    .btn-nav { background: #6c757d; width: 48%; }
+    .btn:disabled { background: #ccc; cursor: not-allowed; }
+    
+    input[type="text"] { width: 100%; padding: 12px; font-size: 16px; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; margin: 15px 0; }
+    
+    #previewImg { width: 100%; max-height: 45vh; object-fit: contain; background: #eee; border-radius: 8px; }
+    .nav-buttons { display: flex; justify-content: space-between; margin-top: 15px; }
+    
+    /* ローディング画面 */
+    #loadingOverlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.9); display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 999; }
+    .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #007aff; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin-bottom: 15px; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
-  <h2>HEIF → PNG (GPS付き)</h2>
-  <p>100枚でもOK！複数変換後にまとめてZIPで保存できる変換器</p>
-  
-  <input type="file" id="fileInput" accept="image/heic,image/heif" multiple style="font-size: 16px; padding: 10px 0;">
-  
-  <div id="status"></div>
-  
-  <!-- ここにZIPダウンロードボタンが出現する -->
-  <div id="zipArea"></div>
-  
-  <div class="card" style="margin-top: 20px;">
-    <strong>処理ログ</strong>
-    <div id="output" style="margin-top: 10px;"></div>
+
+  <!-- ローディングオーバーレイ -->
+  <div id="loadingOverlay">
+    <div class="spinner"></div>
+    <div id="loadingText" style="font-weight: bold; color: #333;">画像を読み込み中...</div>
+  </div>
+
+  <!-- ステップ1：ファイル選択エリア -->
+  <div id="setupArea" class="card">
+    <h2>📸 HEIF → PNG 変換 (登録名＋エクセル出力)</h2>
+    <p>複数枚を選択して、1枚ずつプレビューしながら名前を登録できるぜ！</p>
+    <input type="file" id="fileInput" accept="image/heic,image/heif" multiple style="font-size: 16px; padding: 10px 0; width: 100%;">
+  </div>
+
+  <!-- ステップ2：プレビュー＆名前登録エリア (初期非表示) -->
+  <div id="reviewArea" class="card" style="display: none;">
+    <div style="display: flex; justify-content: space-between; font-weight: bold; margin-bottom: 10px;">
+      <span>画像プレビュー</span>
+      <span id="counterText">1 / 1</span>
+    </div>
+    
+    <img id="previewImg" src="" alt="プレビュー画像">
+    
+    <input type="text" id="customNameInput" placeholder="この写真の登録名を入力 (例: 現場A)">
+    
+    <div class="nav-buttons">
+      <button id="btnPrev" class="btn btn-nav">◀ 前の画像</button>
+      <button id="btnNext" class="btn btn-nav">次の画像 ▶</button>
+    </div>
+    
+    <hr style="margin: 20px 0; border: 0; border-top: 1px dashed #ccc;">
+    
+    <button id="btnZip" class="btn btn-primary">📦 全て確認完了＆ZIP・エクセル生成</button>
+  </div>
+
+  <!-- ステップ3：完了画面 (初期非表示) -->
+  <div id="completeArea" class="card" style="display: none; text-align: center;">
+    <h2>🎉 変換完了！</h2>
+    <p>ZIPファイルの中に、変換された画像と<b>「登録リスト.xlsx」</b>が入っているぜ！</p>
+    <div id="downloadLinkArea"></div>
+    <button class="btn btn-nav" style="margin-top: 20px; width: 100%;" onclick="location.reload()">最初からやり直す</button>
   </div>
 
   <script>
+    let files = [];
+    let fileData = [];
+    let currentIndex = 0;
+
+    // UI要素の取得
     const fileInput = document.getElementById('fileInput');
-    const statusDiv = document.getElementById('status');
-    const outputDiv = document.getElementById('output');
-    const zipArea = document.getElementById('zipArea');
+    const setupArea = document.getElementById('setupArea');
+    const reviewArea = document.getElementById('reviewArea');
+    const previewImg = document.getElementById('previewImg');
+    const customNameInput = document.getElementById('customNameInput');
+    const counterText = document.getElementById('counterText');
+    const btnPrev = document.getElementById('btnPrev');
+    const btnNext = document.getElementById('btnNext');
+    const btnZip = document.getElementById('btnZip');
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    const loadingText = document.getElementById('loadingText');
 
+    // 1. ファイル選択時
     fileInput.addEventListener('change', async (e) => {
-      const files = Array.from(e.target.files);
+      files = Array.from(e.target.files);
       if (!files.length) return;
-
-      // 表示の初期化
-      outputDiv.innerHTML = '';
-      zipArea.innerHTML = '';
-      statusDiv.innerText = `${files.length}件の処理を開始...`;
       
-      // 📦 ZIPオブジェクトの作成
+      // データの状態を管理する配列を初期化
+      fileData = files.map(f => ({
+        originalFile: f,
+        originalName: f.name,
+        customName: '',     // ユーザーが入力する登録名
+        lat: null,          // 緯度
+        lon: null,          // 経度
+        pngBlob: null,      // 変換後のPNGデータ
+        objectUrl: null,    // プレビュー用URL
+        gpsExtracted: false // GPS抽出フラグ
+      }));
+
+      setupArea.style.display = 'none';
+      reviewArea.style.display = 'block';
+      currentIndex = 0;
+      
+      await loadAndDisplayCurrent();
+    });
+
+    // 2. 現在のインデックスの画像を読み込んで表示
+    async function loadAndDisplayCurrent() {
+      const data = fileData[currentIndex];
+      
+      loadingText.innerText = `画像 ${currentIndex + 1}枚目を準備中...`;
+      loadingOverlay.style.display = 'flex';
+      
+      // ブラウザに描画の隙間を与えるため少し待つ
+      await new Promise(resolve => setTimeout(resolve, 50));
+      
+      try {
+        // GPS座標の抽出 (初回のみ)
+        if (!data.gpsExtracted) {
+          const exifData = await exifr.gps(data.originalFile);
+          if (exifData && exifData.latitude && exifData.longitude) {
+            data.lat = exifData.latitude;
+            data.lon = exifData.longitude;
+          }
+          data.gpsExtracted = true;
+        }
+
+        // PNGへの変換 (初回のみ・プレビュー表示のため)
+        if (!data.pngBlob) {
+          const pngBlob = await heic2any({ blob: data.originalFile, toType: "image/png" });
+          data.pngBlob = Array.isArray(pngBlob) ? pngBlob[0] : pngBlob;
+          data.objectUrl = URL.createObjectURL(data.pngBlob);
+        }
+
+        // UIの更新
+        previewImg.src = data.objectUrl;
+        customNameInput.value = data.customName;
+        counterText.innerText = `${currentIndex + 1} / ${files.length}`;
+        
+        btnPrev.disabled = currentIndex === 0;
+        btnNext.disabled = currentIndex === files.length - 1;
+        
+      } catch(e) {
+        console.error(e);
+        alert("画像の読み込みに失敗しました。");
+      } finally {
+        loadingOverlay.style.display = 'none';
+      }
+    }
+
+    // 入力された名前をリアルタイムで保存
+    customNameInput.addEventListener('input', (e) => {
+      fileData[currentIndex].customName = e.target.value;
+    });
+
+    // 前へボタン
+    btnPrev.addEventListener('click', async () => {
+      if (currentIndex > 0) {
+        currentIndex--;
+        await loadAndDisplayCurrent();
+      }
+    });
+
+    // 次へボタン
+    btnNext.addEventListener('click', async () => {
+      if (currentIndex < files.length - 1) {
+        currentIndex++;
+        await loadAndDisplayCurrent();
+      }
+    });
+
+    // 3. 全て確認完了・ZIPとエクセルを生成
+    btnZip.addEventListener('click', async () => {
+      reviewArea.style.display = 'none';
+      loadingOverlay.style.display = 'flex';
+      
       const zip = new JSZip();
+      
+      // エクセル用の二次元配列（1行目はヘッダー）
+      const excelRows = [
+        ["元ファイル名", "登録名", "緯度", "経度", "出力ファイル名"]
+      ];
+
       let successCount = 0;
 
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        statusDiv.innerText = `処理中 (${i + 1}/${files.length}): ${file.name}`;
+      for (let i = 0; i < fileData.length; i++) {
+        const data = fileData[i];
+        loadingText.innerText = `ZIPとエクセルを作成中 (${i + 1}/${files.length})...`;
+        
+        // ブラウザ描画用
+        await new Promise(resolve => setTimeout(resolve, 10));
 
         try {
-          // 1. ExifからGPS座標を抽出
-          let coordStr = "_no_gps";
-          const exifData = await exifr.gps(file);
-          if (exifData && exifData.latitude && exifData.longitude) {
-            coordStr = `_${exifData.latitude.toFixed(6)},${exifData.longitude.toFixed(6)}`;
+          // 「次へ」を押さずにスキップされた未処理ファイルがあればここで一括変換
+          if (!data.gpsExtracted) {
+            const exifData = await exifr.gps(data.originalFile);
+            if (exifData && exifData.latitude && exifData.longitude) {
+              data.lat = exifData.latitude;
+              data.lon = exifData.longitude;
+            }
+            data.gpsExtracted = true;
+          }
+          if (!data.pngBlob) {
+            const pngBlob = await heic2any({ blob: data.originalFile, toType: "image/png" });
+            data.pngBlob = Array.isArray(pngBlob) ? pngBlob[0] : pngBlob;
           }
 
-          // 2. HEICをPNG Blobへ変換
-          const pngBlob = await heic2any({ blob: file, toType: "image/png" });
-          const blobToUse = Array.isArray(pngBlob) ? pngBlob[0] : pngBlob;
-
-          // 3. ファイル名生成
-          const baseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
-          const outName = `${baseName}${coordStr}.png`;
+          // ファイル名の組み立て
+          let coordStr = "_no_gps";
+          if (data.lat !== null && data.lon !== null) {
+            coordStr = `_${data.lat.toFixed(6)},${data.lon.toFixed(6)}`;
+          }
           
-          // 📦 変換した画像をZIP内に放り込む
-          zip.file(outName, blobToUse);
+          const baseOriginal = data.originalName.substring(0, data.originalName.lastIndexOf('.')) || data.originalName;
+          // 登録名が空なら元のファイル名を使う
+          const safeCustomName = data.customName.trim() ? data.customName.trim() : baseOriginal;
+          
+          let outName = `${safeCustomName}${coordStr}.png`;
+          
+          // ZIP内で同名ファイルが被った場合の回避処理
+          let counter = 1;
+          let finalOutName = outName;
+          while (zip.file(finalOutName)) {
+            finalOutName = `${safeCustomName}_${counter}${coordStr}.png`;
+            counter++;
+          }
+
+          // ZIPに画像を詰める
+          zip.file(finalOutName, data.pngBlob);
+          
+          // エクセルの行に追加
+          excelRows.push([
+            data.originalName,
+            data.customName.trim(),
+            data.lat !== null ? data.lat : "N/A",
+            data.lon !== null ? data.lon : "N/A",
+            finalOutName
+          ]);
+
           successCount++;
-
-          // ログに追記
-          const logItem = document.createElement('div');
-          logItem.className = 'log-item';
-          logItem.innerHTML = `✅ 変換OK: ${outName}`;
-          outputDiv.appendChild(logItem);
-
         } catch (err) {
-          console.error(err);
-          const errItem = document.createElement('div');
-          errItem.className = 'log-item';
-          errItem.innerHTML = `❌ エラー: ${file.name}`;
-          errItem.style.color = "red";
-          outputDiv.appendChild(errItem);
+          console.error(`Error processing ${data.originalName}`, err);
         }
       }
+
+      // 4. エクセル (xlsx) の生成
+      loadingText.innerText = "エクセルファイルを生成中...";
+      const ws = XLSX.utils.aoa_to_sheet(excelRows);
       
-      // すべての処理が終わったらZIPを生成してボタンを出す
-      if (successCount > 0) {
-        statusDiv.innerText = "変換完了！ZIPファイルを生成中...";
-        
-        try {
-          const zipBlob = await zip.generateAsync({ type: "blob" });
-          const zipUrl = URL.createObjectURL(zipBlob);
-          
-          // ドデカいダウンロードボタンを表示
-          zipArea.innerHTML = `
-            <a class="btn btn-success" href="${zipUrl}" download="converted_images.zip">
-              📦 ${successCount}枚をまとめてZIPで保存！
-            </a>
-          `;
-          statusDiv.innerText = "すべての処理が完了したぜ！下の緑のボタンから保存してくれ！";
-        } catch (err) {
-          statusDiv.innerText = "ZIP生成中にエラーが発生しました。";
-        }
-      } else {
-        statusDiv.innerText = "変換に成功したファイルがありませんでした。";
-      }
+      // カラムの幅を自動調整
+      ws['!cols'] = [{wch: 15}, {wch: 15}, {wch: 12}, {wch: 12}, {wch: 35}];
+      
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "変換リスト");
+      
+      // Blob(バイナリデータ)として書き出し
+      const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      zip.file("画像リスト.xlsx", excelBuffer); // ZIPにエクセルを追加
+
+      // 5. ZIPの生成とダウンロード
+      loadingText.innerText = "ZIPをまとめています...";
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      const zipUrl = URL.createObjectURL(zipBlob);
+
+      loadingOverlay.style.display = 'none';
+      const completeArea = document.getElementById('completeArea');
+      completeArea.style.display = 'block';
+      
+      document.getElementById('downloadLinkArea').innerHTML = `
+        <a class="btn btn-success" href="${zipUrl}" download="converted_images.zip">
+          📦 ZIPファイル (${successCount}枚 + エクセル) を保存
+        </a>
+      `;
     });
   </script>
 </body>
